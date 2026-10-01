@@ -32,7 +32,11 @@ func run() error {
 	}
 	clock := func() time.Time { return time.Now().UTC() }
 	lineIDs := []model.LineID{"line-1", "line-2", "line-3"}
-	plant, err := process.NewPlant(cfg.DataDir, lineIDs, clock)
+	dwellPolicy, err := cfg.DwellPolicy()
+	if err != nil {
+		return err
+	}
+	plant, err := process.NewPlant(cfg.DataDir, lineIDs, dwellPolicy, clock)
 	if err != nil {
 		return err
 	}
@@ -63,6 +67,10 @@ func run() error {
 			case <-ticker.C:
 				if _, runErr := plant.RunCompensations(maintenanceContext); runErr != nil && !errors.Is(runErr, context.Canceled) {
 					log.Printf("compensation maintenance: %v", runErr)
+				}
+				// 每秒按原始进入时间评估阶段驻留；到点只生成一次告警，重启后继续沿用原计时。
+				if _, dwellErr := plant.EvaluateDwell(maintenanceContext); dwellErr != nil && !errors.Is(dwellErr, context.Canceled) {
+					log.Printf("dwell maintenance: %v", dwellErr)
 				}
 			}
 		}

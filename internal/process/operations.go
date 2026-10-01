@@ -77,7 +77,14 @@ func (p *Plant) StatusAerationWindows() []aeration.Window {
 }
 
 func (p *Plant) AcknowledgeAlarm(id uuid.UUID) (model.Alarm, error) {
-	return p.alarms.Acknowledge(id)
+	alarm, err := p.alarms.Acknowledge(id)
+	if err != nil {
+		return model.Alarm{}, err
+	}
+	if alarm.Code == dwellAlarmCode {
+		_ = p.dwell.MarkAcknowledged(id)
+	}
+	return alarm, nil
 }
 
 func (p *Plant) RecoverAlarm(id uuid.UUID) (model.Alarm, error) {

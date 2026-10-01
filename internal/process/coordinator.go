@@ -13,6 +13,7 @@ import (
 	"github.com/wyw14/cry-97/internal/alarm"
 	"github.com/wyw14/cry-97/internal/discharge"
 	"github.com/wyw14/cry-97/internal/dosing"
+	"github.com/wyw14/cry-97/internal/dwell"
 	"github.com/wyw14/cry-97/internal/intake"
 	"github.com/wyw14/cry-97/internal/interlock"
 	"github.com/wyw14/cry-97/internal/journal"
@@ -47,12 +48,14 @@ type Plant struct {
 	handovers     *sludge.HandoverBook
 	sequences     *sludge.SequenceBook
 	compensations *journal.CompensationQueue
+	dwell         *dwell.Tracker
+	recoveryDwell map[model.LineID]dwellReplayPoint
 	devices       *DeviceBus
 	sampler       *sensor.Sampler
 	receiver      *sensor.Receiver
 }
 
-func NewPlant(dataDir string, lines []model.LineID, now func() time.Time) (*Plant, error) {
+func NewPlant(dataDir string, lines []model.LineID, dwellPolicy dwell.Policy, now func() time.Time) (*Plant, error) {
 	if dataDir == "" || len(lines) == 0 || now == nil {
 		return nil, errors.New("plant data directory, lines and clock are required")
 	}
@@ -65,6 +68,10 @@ func NewPlant(dataDir string, lines []model.LineID, now func() time.Time) (*Plan
 		return nil, err
 	}
 	cursor, err := journal.NewCursorStore(filepath.Join(dataDir, "sample-cursors.json"))
+	if err != nil {
+		return nil, err
+	}
+	dwellTracker, err := dwell.NewTracker(filepath.Join(dataDir, "dwell-state.json"), dwellPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +154,9 @@ func NewPlant(dataDir string, lines []model.LineID, now func() time.Time) (*Plan
 		labResults: lab.NewResults(), permits: permits, valves: valves, alarms: alarm.NewService(),
 		settling: make(map[model.LineID]*settling.State), cycles: settling.NewCycleBook(),
 		interlocks: arbiter, drains: drains, pumps: pumps, handovers: sludge.NewHandoverBook(),
-		sequences: sequences, compensations: queue, devices: devices, sampler: sampler, receiver: receiver,
+		sequences: sequences, compensations: queue, dwell: dwellTracker,
+		recoveryDwell: make(map[model.LineID]dwellReplayPoint),
+		devices:       devices, sampler: sampler, receiver: receiver,
 	}
 	for _, lineID := range lines {
 		plant.lines[lineID] = model.NewLineState(lineID, now())
@@ -194,6 +203,9 @@ func (p *Plant) StartBatch(ctx context.Context, lineID model.LineID, flow float6
 	if _, err := p.store.Append(ctx, event); err != nil {
 		return model.Batch{}, err
 	}
+	if err := p.startStageDwell(lineID, batch.ID, batch.Stage, now); err != nil {
+		return model.Batch{}, err
+	}
 	return batch, nil
 }
 
@@ -221,6 +233,13 @@ func (p *Plant) AdvanceBatch(ctx context.Context, lineID model.LineID, next mode
 	state.UpdatedAt = now.UTC()
 	p.lines[lineID] = state
 	p.mu.Unlock()
+	if next == model.StageClosed {
+		if err := p.clearDwell(lineID); err != nil {
+			return model.Batch{}, err
+		}
+	} else if err := p.startStageDwell(lineID, updated.ID, updated.Stage, now); err != nil {
+		return model.Batch{}, err
+	}
 	return updated, nil
 }
 

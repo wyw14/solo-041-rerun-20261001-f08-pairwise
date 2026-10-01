@@ -8,6 +8,7 @@ import (
 	"github.com/wyw14/cry-97/internal/aeration"
 	"github.com/wyw14/cry-97/internal/discharge"
 	"github.com/wyw14/cry-97/internal/dosing"
+	"github.com/wyw14/cry-97/internal/dwell"
 	"github.com/wyw14/cry-97/internal/intake"
 	"github.com/wyw14/cry-97/internal/journal"
 	"github.com/wyw14/cry-97/internal/model"
@@ -34,6 +35,7 @@ type LineStatus struct {
 	Blowers       []aeration.Blower      `json:"blowers"`
 	Valves        []discharge.Valve      `json:"valves"`
 	Commands      []model.DeviceCommand  `json:"commands"`
+	Dwell         *dwell.Status          `json:"dwell,omitempty"`
 	AlarmCount    int                    `json:"alarm_count"`
 	ObservedAt    time.Time              `json:"observed_at"`
 }
@@ -84,15 +86,32 @@ func (p *Plant) Status(lineID model.LineID) (LineStatus, error) {
 	if value, found := p.sequences.Current(lineID); found {
 		sequence = &value
 	}
+	var dwellStatus *dwell.Status
+	if value, tracked := p.dwell.View(lineID, p.now()); tracked {
+		dwellStatus = &value
+	}
 	return LineStatus{
 		Line: line, Batch: batch, Intake: admission, Equalizers: p.equalizers.Snapshot(), Dose: dose, LabResult: labResult, Permit: permit,
 		Cycle: cycle, Handover: handover, Sequence: sequence, Settling: settlingState.Snapshot(),
 		Samples: p.sampler.LineSnapshot(lineID), SampleCursor: p.receiver.Current(lineID),
 		Compensations: p.compensations.Pending(),
 		Pumps:         filterPumps(p.pumps.Snapshot(), lineID), Blowers: p.aeration.Blowers(),
-		Valves: p.valves.Snapshot(), Commands: p.devices.All(),
+		Valves: p.valves.Snapshot(), Commands: p.devices.All(), Dwell: dwellStatus,
 		AlarmCount: len(p.alarms.Active(lineID)), ObservedAt: p.now().UTC(),
 	}, nil
+}
+
+func (p *Plant) LineIDs() []model.LineID {
+	lines := p.Lines()
+	result := make([]model.LineID, 0, len(lines))
+	for _, line := range lines {
+		result = append(result, line.ID)
+	}
+	return result
+}
+
+func (p *Plant) DwellStatuses() []dwell.Status {
+	return p.dwell.Views(p.now().UTC(), p.LineIDs()...)
 }
 
 func filterPumps(values []sludge.Pump, lineID model.LineID) []sludge.Pump {

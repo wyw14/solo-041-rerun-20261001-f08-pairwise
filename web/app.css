@@ -39,6 +39,8 @@ pre { margin: 0; min-height: 78px; padding: 12px; overflow: auto; border-radius:
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 9px 8px; border-bottom: 1px solid #e5eaec; text-align: left; }
 th { color: #53636b; font-weight: 650; }
+.over { color: #a63e37; font-weight: 650; }
+.ack { color: #206c63; font-weight: 650; }
 @media (max-width: 820px) {
   header { height: auto; padding: 14px 18px; align-items: flex-start; flex-direction: column; gap: 10px; }
   nav { flex-wrap: wrap; }

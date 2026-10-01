@@ -42,6 +42,7 @@ func (p *Plant) ApplyLabResult(ctx context.Context, result model.LabResult, now 
 		p.mu.Unlock()
 		return QualificationOutcome{}, errors.New("lab result batch is not found")
 	}
+	previousStage := batch.Stage
 	updated, err := batch.ApplyQualification(result, now)
 	if err != nil {
 		p.mu.Unlock()
@@ -53,6 +54,11 @@ func (p *Plant) ApplyLabResult(ctx context.Context, result model.LabResult, now 
 	line.UpdatedAt = now.UTC()
 	p.lines[updated.LineID] = line
 	p.mu.Unlock()
+	if updated.Stage != previousStage {
+		if err := p.startStageDwell(updated.LineID, updated.ID, updated.Stage, now); err != nil {
+			return QualificationOutcome{}, err
+		}
+	}
 	if _, err := p.labResults.Apply(result); err != nil {
 		return QualificationOutcome{}, err
 	}

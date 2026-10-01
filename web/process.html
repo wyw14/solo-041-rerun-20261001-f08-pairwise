@@ -6,14 +6,17 @@
 <main>
   <div class="page-head"><div><h1>处理线运行</h1><div class="muted">进水接纳、批次阶段和出水状态</div></div><div class="status"><span class="dot"></span><span id="health">checking</span></div></div>
   <div class="grid">
-    <section class="panel wide"><h2>处理线</h2><table><thead><tr><th>处理线</th><th>阶段</th><th>代际</th><th>批次</th></tr></thead><tbody id="lines"></tbody></table></section>
+    <section class="panel wide"><h2>处理线</h2><table><thead><tr><th>处理线</th><th>阶段</th><th>代际</th><th>批次</th><th>阶段驻留剩余</th><th>允许时长 / 依据</th><th>告警</th></tr></thead><tbody id="lines"></tbody></table>
+    <p class="muted" id="dwell-note">驻留时间按批次进入阶段的原始时间计算，服务重启不会重置；超时仅告警一次，阶段推进或批次关闭后自动解除。</p></section>
     <section class="panel"><h2>接纳进水</h2><form id="start"><label>处理线<select name="line"><option>line-1</option><option>line-2</option><option>line-3</option></select></label><label>流量 m³/h<input name="flow" type="number" value="760" min="1"></label><label>来源<input name="source" value="north-intake"></label><button>创建处理批次</button></form></section>
     <section class="panel wide"><h2>最近操作</h2><pre id="output">等待操作</pre></section>
     <section class="panel"><h2>急停隔离</h2><form id="stop"><label>处理线<select name="line"><option>line-1</option><option>line-2</option><option>line-3</option></select></label><label>原因<input name="reason" value="operator safety check"></label><button class="danger">隔离处理线</button></form></section>
   </div>
 </main>
 <script src="/assets/common.js"></script><script>
-async function loadLines(){const data=await request('/api/process-lines');document.querySelector('#lines').innerHTML=data.lines.map(x=>`<tr><td>${x.line_id}</td><td>${x.stage}</td><td>${x.generation}</td><td>${x.batch_id||'-'}</td></tr>`).join('')}
+function fmtMS(ms){if(ms===null||ms===undefined)return '-';const sign=ms<0?'-':'';ms=Math.abs(ms);const h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000);return sign+[h,m,s].map(v=>String(v).padStart(2,'0')).join(':')}
+function dwellCell(d){if(!d)return '<td class="muted">不监控</td><td></td><td></td>';const basis=d.source==='line_override'?'处理线专属配置':'默认工艺配置';const remain=d.overtime?`<span class="over">已超时 ${fmtMS(d.remaining_ms)}</span>`:fmtMS(d.remaining_ms);const alarm=d.alarm_id?(d.acknowledged?'<span class="ack">已确认</span>':'<span class="over">待确认</span>'):'-';return `<td>${remain}</td><td>${fmtMS(d.limit_ms)}<div class="muted">${basis}</div></td><td>${alarm}</td>`}
+async function loadLines(){const data=await request('/api/process-lines');const dwell=new Map((data.dwell||[]).map(d=>[d.line_id,d]));document.querySelector('#lines').innerHTML=data.lines.map(x=>`<tr><td>${x.line_id}</td><td>${x.stage}</td><td>${x.generation}</td><td>${x.batch_id?x.batch_id.slice(0,8):'-'}</td>${dwellCell(dwell.get(x.line_id))}</tr>`).join('')}
 document.querySelector('#start').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{show(await request(`/api/process-lines/${f.get('line')}/batches`,{method:'POST',body:JSON.stringify({flow_m3_hour:Number(f.get('flow')),source:f.get('source')})}));loadLines()}catch(err){showError(err)}});
-document.querySelector('#stop').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{show(await request(`/api/emergency/${f.get('line')}`,{method:'POST',body:JSON.stringify({reason:f.get('reason')})}));loadLines()}catch(err){showError(err)}});loadLines().catch(showError);
+document.querySelector('#stop').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{show(await request(`/api/emergency/${f.get('line')}`,{method:'POST',body:JSON.stringify({reason:f.get('reason')})}));loadLines()}catch(err){showError(err)}});loadLines().catch(showError);setInterval(()=>loadLines().catch(()=>{}),5000);setInterval(refreshHealth,15000);
 </script></body></html>

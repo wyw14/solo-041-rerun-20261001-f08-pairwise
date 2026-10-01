@@ -31,6 +31,13 @@ func NewAlarm(lineID LineID, code, message string, severity AlarmSeverity, now t
 	}
 }
 
+// NewAlarmWithID 用既有身份重建告警，供重启后恢复超时告警使用，避免重新分配 ID。
+func NewAlarmWithID(id uuid.UUID, lineID LineID, code, message string, severity AlarmSeverity, now time.Time) Alarm {
+	alarm := NewAlarm(lineID, code, message, severity, now)
+	alarm.ID = id
+	return alarm
+}
+
 func (a Alarm) Acknowledge() Alarm {
 	a.Acknowledged = true
 	return a

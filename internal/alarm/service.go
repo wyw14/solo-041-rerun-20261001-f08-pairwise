@@ -26,6 +26,38 @@ func (s *Service) Raise(alarm model.Alarm) model.Alarm {
 	return alarm
 }
 
+// Ensure 幂等写入告警：同 ID 已存在时保留既有记录（包括操作员的确认态），
+// 供超时指派和重启恢复使用。
+func (s *Service) Ensure(alarm model.Alarm) model.Alarm {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.alarms[alarm.ID]; ok {
+		return existing
+	}
+	s.alarms[alarm.ID] = alarm
+	return alarm
+}
+
+func (s *Service) Get(id uuid.UUID) (model.Alarm, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.alarms[id]
+	return value, ok
+}
+
+// Resolve 解除一条仍处于活动态的告警；告警不存在或已解除时不做改动。
+func (s *Service) Resolve(id uuid.UUID, now time.Time) (model.Alarm, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value, ok := s.alarms[id]
+	if !ok || !value.Active() {
+		return value, ok
+	}
+	value = value.Recover(now)
+	s.alarms[id] = value
+	return value, true
+}
+
 func (s *Service) Acknowledge(id uuid.UUID) (model.Alarm, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

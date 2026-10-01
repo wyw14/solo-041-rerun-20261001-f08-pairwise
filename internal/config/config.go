@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/wyw14/cry-97/internal/dwell"
 )
 
 type Config struct {
@@ -15,6 +17,7 @@ type Config struct {
 	WebDir          string
 	ShutdownTimeout time.Duration
 	SampleWindow    int
+	StageTimeouts   string
 }
 
 func Load() (Config, error) {
@@ -24,11 +27,18 @@ func Load() (Config, error) {
 		WebDir:          env("BIOTREAT_WEB", "web"),
 		ShutdownTimeout: 8 * time.Second,
 		SampleWindow:    10,
+		StageTimeouts:   strings.TrimSpace(os.Getenv("BIOTREAT_STAGE_TIMEOUTS")),
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// DwellPolicy 解析“处理线 × 工艺阶段”的允许停留时长配置；
+// 空配置使用内置默认值。格式见 dwell.ParsePolicy。
+func (c Config) DwellPolicy() (dwell.Policy, error) {
+	return dwell.ParsePolicy(c.StageTimeouts)
 }
 
 func (c Config) Validate() error {
