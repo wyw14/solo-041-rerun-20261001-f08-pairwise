@@ -13,6 +13,7 @@ import (
 	"github.com/wyw14/cry-97/internal/alarm"
 	"github.com/wyw14/cry-97/internal/discharge"
 	"github.com/wyw14/cry-97/internal/dosing"
+	"github.com/wyw14/cry-97/internal/dwell"
 	"github.com/wyw14/cry-97/internal/intake"
 	"github.com/wyw14/cry-97/internal/interlock"
 	"github.com/wyw14/cry-97/internal/journal"
@@ -39,6 +40,7 @@ type Plant struct {
 	permits       *discharge.PermitBook
 	valves        *discharge.ValveController
 	alarms        *alarm.Service
+	dwell         *dwell.Tracker
 	settling      map[model.LineID]*settling.State
 	cycles        *settling.CycleBook
 	interlocks    *interlock.Arbiter
@@ -52,7 +54,7 @@ type Plant struct {
 	receiver      *sensor.Receiver
 }
 
-func NewPlant(dataDir string, lines []model.LineID, now func() time.Time) (*Plant, error) {
+func NewPlant(dataDir string, lines []model.LineID, dwellLimits dwell.Limits, now func() time.Time) (*Plant, error) {
 	if dataDir == "" || len(lines) == 0 || now == nil {
 		return nil, errors.New("plant data directory, lines and clock are required")
 	}
@@ -149,6 +151,11 @@ func NewPlant(dataDir string, lines []model.LineID, now func() time.Time) (*Plan
 		interlocks: arbiter, drains: drains, pumps: pumps, handovers: sludge.NewHandoverBook(),
 		sequences: sequences, compensations: queue, devices: devices, sampler: sampler, receiver: receiver,
 	}
+	dwellTracker, err := dwell.NewTracker(filepath.Join(dataDir, "dwell.json"), dwellLimits, plant.alarms)
+	if err != nil {
+		return nil, err
+	}
+	plant.dwell = dwellTracker
 	for _, lineID := range lines {
 		plant.lines[lineID] = model.NewLineState(lineID, now())
 		listener := alarm.NewBlanketListener(plant.alarms, now)
@@ -194,6 +201,7 @@ func (p *Plant) StartBatch(ctx context.Context, lineID model.LineID, flow float6
 	if _, err := p.store.Append(ctx, event); err != nil {
 		return model.Batch{}, err
 	}
+	p.dwell.Observe(batch, now)
 	return batch, nil
 }
 
@@ -221,6 +229,7 @@ func (p *Plant) AdvanceBatch(ctx context.Context, lineID model.LineID, next mode
 	state.UpdatedAt = now.UTC()
 	p.lines[lineID] = state
 	p.mu.Unlock()
+	p.dwell.Observe(updated, now)
 	return updated, nil
 }
 

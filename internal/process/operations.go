@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wyw14/cry-97/internal/aeration"
 	"github.com/wyw14/cry-97/internal/dosing"
+	"github.com/wyw14/cry-97/internal/dwell"
 	"github.com/wyw14/cry-97/internal/model"
 	"github.com/wyw14/cry-97/internal/settling"
 )
@@ -66,6 +67,21 @@ func (p *Plant) AdvanceSettling(lineID model.LineID) (settling.Cycle, error) {
 
 func (p *Plant) Alarms() []model.Alarm {
 	return p.alarms.All()
+}
+
+// EvaluateDwell raises dwell alarms for batches that have overstayed their
+// stage limit. It is driven by the maintenance ticker.
+func (p *Plant) EvaluateDwell(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	p.dwell.Evaluate(p.now())
+	return nil
+}
+
+// DwellStatuses reports the stage dwell budget of every tracked batch.
+func (p *Plant) DwellStatuses() []dwell.Status {
+	return p.dwell.Statuses(p.now())
 }
 
 func (p *Plant) StatusBlowers() []aeration.Blower {

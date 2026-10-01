@@ -8,6 +8,7 @@ import (
 	"github.com/wyw14/cry-97/internal/aeration"
 	"github.com/wyw14/cry-97/internal/discharge"
 	"github.com/wyw14/cry-97/internal/dosing"
+	"github.com/wyw14/cry-97/internal/dwell"
 	"github.com/wyw14/cry-97/internal/intake"
 	"github.com/wyw14/cry-97/internal/journal"
 	"github.com/wyw14/cry-97/internal/model"
@@ -18,6 +19,7 @@ import (
 type LineStatus struct {
 	Line          model.LineState        `json:"line"`
 	Batch         *model.Batch           `json:"batch,omitempty"`
+	Dwell         *dwell.Status          `json:"dwell,omitempty"`
 	Intake        *intake.Admission      `json:"intake,omitempty"`
 	Equalizers    []intake.Equalizer     `json:"equalizers"`
 	Dose          *dosing.Change         `json:"dose,omitempty"`
@@ -84,8 +86,12 @@ func (p *Plant) Status(lineID model.LineID) (LineStatus, error) {
 	if value, found := p.sequences.Current(lineID); found {
 		sequence = &value
 	}
+	var dwellStatus *dwell.Status
+	if value, found := p.dwell.Status(lineID, p.now()); found {
+		dwellStatus = &value
+	}
 	return LineStatus{
-		Line: line, Batch: batch, Intake: admission, Equalizers: p.equalizers.Snapshot(), Dose: dose, LabResult: labResult, Permit: permit,
+		Line: line, Batch: batch, Dwell: dwellStatus, Intake: admission, Equalizers: p.equalizers.Snapshot(), Dose: dose, LabResult: labResult, Permit: permit,
 		Cycle: cycle, Handover: handover, Sequence: sequence, Settling: settlingState.Snapshot(),
 		Samples: p.sampler.LineSnapshot(lineID), SampleCursor: p.receiver.Current(lineID),
 		Compensations: p.compensations.Pending(),

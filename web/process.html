@@ -6,14 +6,16 @@
 <main>
   <div class="page-head"><div><h1>处理线运行</h1><div class="muted">进水接纳、批次阶段和出水状态</div></div><div class="status"><span class="dot"></span><span id="health">checking</span></div></div>
   <div class="grid">
-    <section class="panel wide"><h2>处理线</h2><table><thead><tr><th>处理线</th><th>阶段</th><th>代际</th><th>批次</th></tr></thead><tbody id="lines"></tbody></table></section>
+    <section class="panel wide"><h2>处理线</h2><table><thead><tr><th>处理线</th><th>阶段</th><th>代际</th><th>批次</th><th>阶段停留</th></tr></thead><tbody id="lines"></tbody></table></section>
     <section class="panel"><h2>接纳进水</h2><form id="start"><label>处理线<select name="line"><option>line-1</option><option>line-2</option><option>line-3</option></select></label><label>流量 m³/h<input name="flow" type="number" value="760" min="1"></label><label>来源<input name="source" value="north-intake"></label><button>创建处理批次</button></form></section>
     <section class="panel wide"><h2>最近操作</h2><pre id="output">等待操作</pre></section>
     <section class="panel"><h2>急停隔离</h2><form id="stop"><label>处理线<select name="line"><option>line-1</option><option>line-2</option><option>line-3</option></select></label><label>原因<input name="reason" value="operator safety check"></label><button class="danger">隔离处理线</button></form></section>
   </div>
 </main>
 <script src="/assets/common.js"></script><script>
-async function loadLines(){const data=await request('/api/process-lines');document.querySelector('#lines').innerHTML=data.lines.map(x=>`<tr><td>${x.line_id}</td><td>${x.stage}</td><td>${x.generation}</td><td>${x.batch_id||'-'}</td></tr>`).join('')}
+function fmtDur(ns){const neg=ns<0;ns=Math.abs(ns);const s=Math.floor(ns/1e9),h=Math.floor(s/3600),m=Math.floor(s%3600/60),ss=s%60;return(neg?'-':'')+(h?h+'h'+m+'m':m?m+'m'+ss+'s':ss+'s')}
+function dwellCell(d){if(!d)return'<td>-</td>';if(!d.has_limit)return'<td>未限时</td>';const basis=`进入 ${d.entered_at}，限 ${fmtDur(d.limit_ns)}，已停留 ${fmtDur(d.elapsed_ns)}`;if(d.exceeded)return`<td style="color:#b5423a;font-weight:600" title="${basis}">超时 ${fmtDur(-d.remaining_ns)}</td>`;return`<td title="${basis}">剩余 ${fmtDur(d.remaining_ns)}</td>`}
+async function loadLines(){const data=await request('/api/process-lines');const dwell={};(data.dwell||[]).forEach(d=>dwell[d.line_id]=d);document.querySelector('#lines').innerHTML=data.lines.map(x=>`<tr><td>${x.line_id}</td><td>${x.stage}</td><td>${x.generation}</td><td>${x.batch_id||'-'}</td>${dwellCell(dwell[x.line_id])}</tr>`).join('')}
 document.querySelector('#start').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{show(await request(`/api/process-lines/${f.get('line')}/batches`,{method:'POST',body:JSON.stringify({flow_m3_hour:Number(f.get('flow')),source:f.get('source')})}));loadLines()}catch(err){showError(err)}});
-document.querySelector('#stop').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{show(await request(`/api/emergency/${f.get('line')}`,{method:'POST',body:JSON.stringify({reason:f.get('reason')})}));loadLines()}catch(err){showError(err)}});loadLines().catch(showError);
+document.querySelector('#stop').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{show(await request(`/api/emergency/${f.get('line')}`,{method:'POST',body:JSON.stringify({reason:f.get('reason')})}));loadLines()}catch(err){showError(err)}});loadLines().catch(showError);setInterval(()=>loadLines().catch(showError),5000);
 </script></body></html>

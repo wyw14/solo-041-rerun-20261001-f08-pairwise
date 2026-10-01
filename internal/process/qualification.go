@@ -53,6 +53,7 @@ func (p *Plant) ApplyLabResult(ctx context.Context, result model.LabResult, now 
 	line.UpdatedAt = now.UTC()
 	p.lines[updated.LineID] = line
 	p.mu.Unlock()
+	p.dwell.Observe(updated, now)
 	if _, err := p.labResults.Apply(result); err != nil {
 		return QualificationOutcome{}, err
 	}

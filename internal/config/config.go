@@ -13,6 +13,7 @@ type Config struct {
 	Address         string
 	DataDir         string
 	WebDir          string
+	DwellLimitsPath string
 	ShutdownTimeout time.Duration
 	SampleWindow    int
 }
@@ -22,6 +23,7 @@ func Load() (Config, error) {
 		Address:         env("BIOTREAT_ADDR", "127.0.0.1:19697"),
 		DataDir:         env("BIOTREAT_DATA", filepath.Join("data", "events")),
 		WebDir:          env("BIOTREAT_WEB", "web"),
+		DwellLimitsPath: env("BIOTREAT_DWELL_LIMITS", ""),
 		ShutdownTimeout: 8 * time.Second,
 		SampleWindow:    10,
 	}

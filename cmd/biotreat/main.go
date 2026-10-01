@@ -12,6 +12,7 @@ import (
 
 	"github.com/wyw14/cry-97/internal/api"
 	"github.com/wyw14/cry-97/internal/config"
+	"github.com/wyw14/cry-97/internal/dwell"
 	"github.com/wyw14/cry-97/internal/model"
 	"github.com/wyw14/cry-97/internal/process"
 )
@@ -32,7 +33,11 @@ func run() error {
 	}
 	clock := func() time.Time { return time.Now().UTC() }
 	lineIDs := []model.LineID{"line-1", "line-2", "line-3"}
-	plant, err := process.NewPlant(cfg.DataDir, lineIDs, clock)
+	dwellLimits, err := dwell.LoadLimits(cfg.DwellLimitsPath)
+	if err != nil {
+		return err
+	}
+	plant, err := process.NewPlant(cfg.DataDir, lineIDs, dwellLimits, clock)
 	if err != nil {
 		return err
 	}
@@ -63,6 +68,9 @@ func run() error {
 			case <-ticker.C:
 				if _, runErr := plant.RunCompensations(maintenanceContext); runErr != nil && !errors.Is(runErr, context.Canceled) {
 					log.Printf("compensation maintenance: %v", runErr)
+				}
+				if runErr := plant.EvaluateDwell(maintenanceContext); runErr != nil && !errors.Is(runErr, context.Canceled) {
+					log.Printf("dwell maintenance: %v", runErr)
 				}
 			}
 		}
